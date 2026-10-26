@@ -21,10 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Swift 6.0 compiler floor and a current stable Apple Silicon toolchain.
+          # Required baseline for officially supported toolchains.
           # Installed paths: https://github.com/actions/runner-images/tree/main/images/macos
-          - runner: macos-15-intel
-            xcode: "16.0"
           - runner: macos-26
             xcode: "26.6"
     env:

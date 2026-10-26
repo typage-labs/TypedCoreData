@@ -1,5 +1,9 @@
 # 0.1.0 release preparation
 
+The original preparation status and evidence below are historical snapshots.
+The [CI and support limits](#ci-and-support-limits) section reflects the current
+decision to support **Xcode 26.6 and later compatible releases**.
+
 **26 October 2026 — ready for human review; NO-GO for publication yet.**
 The proposed licensing and source inventory require owner approval, Git index
 cleanup is blocked by this session's filesystem permissions, the remote URL is
@@ -118,7 +122,7 @@ checking and warnings as errors.
 | Updated compiler/verifier run | **Passed: 12 Python self-tests; 4 library/client targets; 14 expected compiler rejections; 1 actual mutation check; 7 isolated traps** | `.build/advanced-verification/results.json` and per-check logs; native traps executed on ARM64, signal 5 with expected production diagnostics |
 | Clean file-based candidate / external SwiftPM consumer | **Built successfully; zero compiler warnings** | `.build/release-preparation/candidate-consumer.log`; copied manifest and production files match the reviewed working tree |
 | iOS simulator execution | **Skipped locally; no iOS runtime tests executed** | CoreSimulator service inventory fails, not evidence that no runtime is installed; required mode fails instead of passing |
-| Hosted CI / oldest Swift 6 toolchain / Intel host execution | **Not executed here** | Workflow prepared; pending actual runner results |
+| Original hosted CI / Intel host execution | **Not executed in this preparation run** | Historical coverage gap; current required jobs are defined below |
 
 The test totals comprise the previous 60 tests / 70 cases plus three private-queue
 tests. Parameterized invocations account for the additional cases. Swift Testing
@@ -167,21 +171,30 @@ ID initializer, mocked ID, or mutation of a model attached to a store was added.
 ## CI and support limits
 
 [ci.yml](../.github/workflows/ci.yml) has read-only `contents` permission, checkout
-credentials disabled, timeouts, and no release/publication job. It prepares:
+credentials disabled, timeouts, and no release/publication job. Official toolchain
+support starts at **Xcode 26.6** and includes later compatible releases. Required
+CI runs:
 
-- Intel `macos-15-intel` / Xcode 16.0 for the Swift 6.0 compiler floor.
-- ARM64 `macos-26` / Xcode 26.6 for another Swift 6 toolchain.
+- ARM64 `macos-26` / Xcode 26.6 for macOS verification.
 - Debug and optimized release tests, strict concurrency and warnings as errors,
-  minimum-target library/client builds and negative/crash verification on both.
-- A required iOS simulator test job on the latter runner.
+  minimum-target library/client builds and all positive, negative and isolated
+  precondition checks on that macOS job.
+- A separate required iOS simulator test job on `macos-26` / Xcode 26.6.
 
-Runner/Xcode choices were checked against the
-[official Intel image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md)
-and [Apple Silicon image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
-Hosted availability can change; CI records the selected compiler/SDK versions
-and fails if selection or a required simulator fails. No remote exists here, so
-this workflow has not executed on GitHub. Local YAML/Python syntax and synthetic
-simulator-selection checks do not substitute for that execution.
+Xcode 16.0 and its Intel runner have been removed from the required matrix.
+Older toolchains may still work, but are not officially supported or release
+gates. Swift 6 language mode and the manifest's `swift-tools-version: 6.0` remain
+unchanged; the manifest version is not an official toolchain support promise.
+Intel minimum-target cross-compilation and host-aware probe selection remain in
+the verifier. Intel host execution is not a required CI job.
+
+The runner's [image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)
+is the reference for installed Xcodes. CI records the selected compiler/SDK
+versions and fails if selection or a required simulator fails. The maintainer
+reported earlier passing Xcode 26.6 macOS and iOS jobs; this workflow revision has
+not been run on GitHub in this session. Local verification does not substitute
+for those required hosted results. See the
+[latest local verification](IMPLEMENTATION_VERIFICATION.md#supported-toolchain-policy-verification).
 
 Current cross-build evidence verifies macOS 10.15 Intel, macOS 11 ARM64, iOS 13
 device and iOS 13 Intel simulator compilation. It does not certify those old OS
@@ -201,8 +214,8 @@ as documented in README.
 3. Confirm the actual GitHub repository URL; replace the README placeholder only
    then. Versioned remote installation cannot be verified before the actual
    repository/tag exists. The `.upToNextMinor(from: "0.1.0")` policy is prepared.
-4. Obtain successful hosted CI and iOS runtime results, review any oldest-toolchain
-   differences, and explicitly accept remaining old-runtime coverage limits.
+4. Obtain successful required Xcode 26.6 macOS and iOS simulator results for the
+   release candidate, and explicitly accept remaining old-OS runtime coverage limits.
 
 **Stop for final human review.** Passing local tests and preparing license text
 do not authorize publication or turn these unresolved items into completed work.

@@ -1,5 +1,11 @@
 # Pre-release critical review — 0.1.0
 
+Historical review snapshot: findings and references below describe the checkout
+at review time. Current toolchain support starts at **Xcode 26.6**, with later
+compatible releases supported; Xcode 16.0 is no longer a required CI check.
+See [current requirements](../README.md#requirements) and
+[CI support policy](RELEASE_PREPARATION.md#ci-and-support-limits).
+
 **Review date:** 26 October 2026. **Recommendation: NO-GO for publication.**
 
 The review found no confirmed runtime correctness defect in the current

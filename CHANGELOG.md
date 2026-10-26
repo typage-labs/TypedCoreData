@@ -23,6 +23,8 @@ release date, Git tag, or remote package URL has been assigned.
 
 ### Requirements and limitations
 
+- Official toolchain support starts at Xcode 26.6 and includes later compatible
+  releases. Older toolchains may work but are outside the required CI matrix.
 - Swift 6 language mode, iOS 13 / macOS 10.15 deployment targets, no external
   dependencies. Native predicate attachment requires iOS 17 / macOS 14.
 - Generic free functions are used where Swift cannot access an Objective-C

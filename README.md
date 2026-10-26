@@ -13,13 +13,19 @@ remain the same.
 
 ## Requirements
 
-- Swift 6 or later, in Swift 6 language mode with complete strict concurrency checking.
+- Xcode 26.6 or a later compatible release (officially supported toolchains).
+- Swift 6 language mode with complete strict concurrency checking.
 - iOS 13+ or macOS 10.15+.
 - An Apple SDK that imports `NSManagedObjectID` as `Sendable`.
 - Swift Package Manager; no external dependencies.
 
 Native Swift predicate attachment requires **iOS 17+ / macOS 14+**. The other
 APIs retain the package's iOS 13 / macOS 10.15 minimums.
+
+The Xcode requirement is separate from these OS deployment targets. Older
+toolchains, including Xcode 16.0, may still work but are not officially supported
+or required CI checks. The manifest's `swift-tools-version: 6.0` remains unchanged;
+it does not imply support for every Swift 6 toolchain.
 
 The package uses checked `Sendable` conformance. It does not add
 `@unchecked Sendable` or suppress concurrency diagnostics. Managed objects remain
@@ -412,7 +418,7 @@ Generic IDs are invariant; `ManagedID<Subclass>` does not implicitly convert to
 
 ## Testing
 
-Run on macOS with an Apple Swift 6 toolchain:
+Run on macOS with Xcode 26.6 or a later compatible release selected:
 
 ```sh
 swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
@@ -445,25 +451,21 @@ has no dependency on that helper.
 The asynchronous context test requires macOS 12 / iOS 15 or later; the library
 does not require those newer context APIs. Native predicate tests require
 macOS 14 / iOS 17. Cross-compilation does not certify older OS or iOS runtime
-behavior. The prepared [CI workflow](.github/workflows/ci.yml) runs debug/release
-tests and the verifier, then requires an available iOS simulator for runtime tests.
+behavior. The required [CI workflow](.github/workflows/ci.yml) uses Xcode 26.6 on
+`macos-26` for Debug/Release tests and the verifier, plus a separate required iOS
+simulator job using the same Xcode version. Strict concurrency and warnings as
+errors remain enabled. Intel minimum-target cross-compilation remains in the
+verifier; there is no required Intel host job.
 Run `python3 Scripts/test-ios-simulator.py` locally to use an installed compatible
 simulator; a skip is reported when one is unavailable.
 
-For Xcode 16.0 / Swift 6.0 test compatibility, a nonisolated test helper creates
-and uses each private context, returning only Sendable results to the fixture
-owner. Contexts are not captured from the main actor into `@Sendable` closures.
-Entity lookups are evaluated before `#require`, and throwing native lookups before
-identity assertions. Capture checking and all assertions remain enabled.
-Xcode 16.0 remains in CI, which now records its actual Core Data declarations
-before testing; verification with that exact toolchain awaits a rerun. See the
-[CI compatibility follow-up](docs/IMPLEMENTATION_VERIFICATION.md#xcode-160-ci-compatibility-follow-up).
-
-Compiler-negative ID and section checks infer the result before attempting an
-incompatible assignment, so the verifier requires a concrete type mismatch rather
-than accepting Swift 6.0's generic ambiguity diagnostic. See the
+Positive compiler checks verify the ID and section APIs' inferred result types.
+Separate negative functions attempt incompatible assignments using explicitly
+typed parameters and local variables. The verifier requires the concrete types
+in a mismatch diagnostic; generic ambiguity is not accepted. See the
 [compiler verification follow-up](docs/IMPLEMENTATION_VERIFICATION.md#swift-60-negative-compiler-verification-follow-up)
-for local results and the remaining Xcode 16.0 hosted verification requirement.
+for local results and historical older-toolchain findings. Xcode 16.0 verification
+is no longer a release requirement.
 
 See [release preparation results](docs/RELEASE_PREPARATION.md) for the current
 toolchain, counts, commands, and platform gaps. Historical results remain in

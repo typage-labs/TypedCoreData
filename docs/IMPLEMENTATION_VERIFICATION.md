@@ -1,5 +1,16 @@
 # Advanced API implementation and verification
 
+**Current 0.1.0 toolchain policy:** Xcode 26.6 and later compatible releases are
+officially supported. Required CI uses Xcode 26.6 for macOS and iOS simulator
+testing. Older toolchains may still work but are unsupported; Xcode 16.0 is no
+longer a release gate. Swift 6 language mode, strict concurrency, warnings as
+errors, iOS 13 and macOS 10.15 deployment targets are unchanged. See
+[CI and support limits](RELEASE_PREPARATION.md#ci-and-support-limits) and
+[latest verification](#supported-toolchain-policy-verification).
+
+The Xcode 16.0 investigations below are historical. Their pending checks do not
+override this support policy or imply that the revised fixtures passed Swift 6.0.
+
 Historical implementation record. The later [pre-release review](PRE_RELEASE_REVIEW.md)
 found that this version of the compiler-negative verifier could accept an unrelated
 error despite the diagnostic claim below (T1). Release preparation fixes the
@@ -275,11 +286,11 @@ Local post-fix verification used Xcode 27.1 / Apple Swift 6.4 on ARM64 macOS
 concurrency and warnings-as-errors, using the writable caches and nested-sandbox
 accommodation documented earlier in this file.
 
-The maintainer reports the first hosted Xcode 26.6 macOS and iOS simulator jobs
-passed. The corrected Xcode 16.0 **debug, release and verifier steps still need a
-hosted rerun**; the original job stopped during debug test compilation, so it
-provides no result for the later steps. Current local success does not establish
-that all remaining old-toolchain checks will pass. No commit, push, tag or
+The maintainer reported the first hosted Xcode 26.6 macOS and iOS simulator jobs
+passed. At this stage, the corrected Xcode 16.0 debug, release and verifier steps
+needed a hosted rerun; the original job stopped during debug test compilation,
+so it provided no result for the later steps. Local success did not establish
+that all remaining old-toolchain checks would pass. No commit, push, tag or
 publication was performed during this fix.
 
 ## Corrected private-context tests for older SDK sendability
@@ -364,7 +375,7 @@ longer accidentally benefits from the current SDK's context conformance.
 **Exact Xcode 16.0 SDK verification remains pending.** Attempts to retrieve its
 final interface were unsuccessful. Historical SDK header evidence supports the
 coordinator's native Sendable conformance, but the final SDK must confirm it.
-The CI matrix still includes Xcode 16.0 and now prints the selected SDK path,
+The CI matrix then included Xcode 16.0 and added logging of the selected SDK path,
 context/coordinator Objective-C declarations, native block methods, Swift
 interface compiler metadata and every `perform` declaration **before Debug
 tests**. This makes the actual signatures available even if test compilation
@@ -379,7 +390,7 @@ no compiler flags or CI test gates were weakened.
 | Optimized release suite, same checks | **63 tests / 73 cases / 8 suites passed**, zero compiler warnings; existing host dSYM accommodation `-debug-info-format none` retained |
 | API verifier | Four minimum-target library/client builds, 12 harness self-tests, 14 intended compiler rejections, one mutation check and seven isolated traps; see current local logs |
 | Conservative non-Sendable-context probe | Positive compilation and three intended negative controls; compiler evidence only, not Core Data runtime evidence |
-| Exact Xcode 16.0 / patched iOS runtime execution | Hosted verification required; local Xcode 16.0 is absent and this session cannot access CoreSimulator |
+| Exact Xcode 16.0 / patched iOS runtime execution | Not executed locally; hosted verification was required under the policy at that time |
 
 Logs and probe evidence for this correction are in
 `.build/coredata-sendability-fix/`; the API verifier's individual logs are in
@@ -390,24 +401,36 @@ post-change verification. Nothing was committed, pushed, tagged or published.
 
 ## Swift 6.0 negative compiler verification follow-up
 
-The maintainer reports that the latest Xcode 16.0 run passes production builds,
+The maintainer reports that Xcode 16.0 passes production builds,
 positive clients and minimum-target builds, but fails the verifier at
 `reject-macos-minimum-WRONG_ID_RESULT`. Its diagnostic is `type of expression is
 ambiguous without a type annotation`. This is a negative-fixture diagnostic
 problem; it is not evidence that Swift accepted incompatible identifiers.
 
-The original single statement constrained `fetchObjectIDs`'s `Entity` from both
-`NSFetchRequest<CompileContact>` and the expected `[ManagedID<CompileCompany>]`
-result. Those constraints conflict. Swift 6.0 reports this failed inference as
-ambiguity rather than the concrete assignment mismatch required by the verifier.
-Separating the statements removes the incompatible contextual type from generic
-call inference:
+The first correction inferred `ids` in one statement and assigned it to the wrong
+type in another. That produced the intended diagnostic locally, but the next
+hosted run confirmed that Swift 6.0 still reports ambiguity with that updated
+fixture. Separating statements was insufficient; the exact older compiler
+diagnostic behavior has not been reproduced locally.
+
+The checks now separate two properties into different functions. The positive
+API client retains the real generic call and verifies its inferred result:
 
 ```swift
 let ids = try context.fetchObjectIDs(for: request)
-let _: [ManagedID<CompileContact>] = ids // Positive check of the inferred result.
+let _: [ManagedID<CompileContact>] = ids
+```
+
+The negative function takes a concrete parameter and assigns it to a named local
+with an explicit incompatible type. There is no generic API invocation or
+inferred input local in this function:
+
+```swift
 #if WRONG_ID_RESULT
-let _: [ManagedID<CompileCompany>] = ids // Intentional incompatible assignment.
+func rejectWrongIDResult(_ contacts: [ManagedID<CompileContact>]) {
+    let companies: [ManagedID<CompileCompany>] = contacts
+    _ = companies
+}
 #endif
 ```
 
@@ -417,19 +440,20 @@ targets. Locally the negative check now reports exactly `cannot assign value of
 type '[ManagedID<CompileContact>]' to type '[ManagedID<CompileCompany>]'`, with
 a note that the `Entity` arguments must be equal.
 
-The section fixture had the same call/result inference pattern; it now infers
-from the controller first, verifies `[CompileContact]?`, then rejects assignment
-to `[CompileCompany]?`. The remaining fixtures were reviewed and run locally:
+The positive section fixture still infers from the real controller API and
+verifies `[CompileContact]?`. A separate `rejectWrongSectionResult` function
+accepts an explicitly declared `[CompileContact]?` parameter and rejects its
+assignment to a named `[CompileCompany]?` local. The remaining fixtures were run locally:
 predicate roots are explicitly constructed and the matcher already allows a
 concrete mismatch on either argument; the scalar comparison, missing initializer
 label, availability and Objective-C generic-extension checks retain their
-specific diagnostic contracts. Their exact Swift 6.0 output still requires CI;
+specific diagnostic contracts. Their exact Swift 6.0 output was not verified;
 no speculative or arbitrary-error alternatives were added.
 
 The verifier's diagnostic allowlist is unchanged. Its compiler-backed mutation
-now replaces the new `= ids` assignment with `unrelatedMissingSymbol()`, requires
+now replaces the named `companies` assignment with `unrelatedMissingSymbol()`, requires
 the missing-symbol diagnostic, and confirms that it does not pass the ID mismatch
-check. Two new Python self-tests reject ambiguity (alone or alongside the expected
+check. The Python self-tests reject ambiguity (alone or alongside the expected
 error) and mismatches involving other types. All existing unrelated-error,
 source-echo, crash and host-architecture controls remain enabled.
 
@@ -450,11 +474,45 @@ Commands used the writable-cache and nested-sandbox accommodations already
 documented above. Release retained `-debug-info-format none` for this host's dSYM
 restriction; optimization and strict diagnostics stayed enabled. Expected Core
 Data error-path logging is present in the passing runtime tests. Logs are
-`.build/swift60-debug-tests.log`, `.build/swift60-release-tests.log`,
-`.build/swift60-compiler-verification.log`, `.build/swift60-ios-simulator.log`
+`.build/concrete-assignments-debug.log`, `.build/concrete-assignments-release.log`,
+`.build/concrete-assignments-verification.log`, `.build/concrete-assignments-ios.log`
 and the individual `.build/advanced-verification/` logs.
 
-**Hosted Xcode 16.0 verification remains required:** that toolchain is not
-installed locally, so these results do not prove its post-fix diagnostic wording.
-Production sources, public APIs, deployment targets and the Xcode 16.0 CI matrix
-are unchanged. No commit, push, tag or publication was performed.
+**Historical limitation:** Xcode 16.0 is not installed locally, so these results
+do not prove its post-fix diagnostic wording. Under the current support policy,
+that verification is no longer required for release. Production sources, public
+APIs and deployment targets remained unchanged during this correction. No commit,
+push, tag or publication was performed.
+
+## Supported-toolchain policy verification
+
+The 0.1.0 policy now requires **Xcode 26.6 or a later compatible release**. The
+workflow change removes only the Xcode 16.0 / `macos-15-intel` matrix entry and
+updates its comment. The Xcode 26.6 macOS job and separate iOS simulator job retain
+their commands, strict diagnostics and read-only permissions. Production sources,
+Package.swift, the pending concrete-assignment fixtures and the verifier were not
+changed for this policy decision. All 14 negative checks and their strict
+diagnostic matching remain in place; ambiguity is not accepted as proof.
+
+Local verification used Xcode 27.1 (27A9275) / Apple Swift 6.4 in Swift 6 language
+mode on 26 October 2026:
+
+| Check | Result |
+| --- | --- |
+| Debug and optimized Release suites | Each passed 63 tests / 73 cases / 8 suites, with complete concurrency checking and warnings as errors; zero compiler warnings |
+| Compiler verifier | Four minimum-target library/client builds, all 14 negative checks, 14 Python self-tests, the unrelated-error mutation and seven isolated precondition probes passed; zero compiler warnings |
+| Workflow structure | YAML and embedded Python parsed; both Xcode 26.6 jobs, required simulator execution, strict diagnostics and read-only permissions verified |
+| iOS runtime attempt | Skipped (exit 77): CoreSimulator inventory/service access unavailable in this session; no runtime pass claimed |
+
+Logs: `.build/supported-xcode-debug.log`, `.build/supported-xcode-release.log`,
+`.build/supported-xcode-verification.log`, `.build/supported-xcode-ios.log` and
+`.build/advanced-verification/`. Commands retained the documented writable-cache
+and nested-sandbox accommodations, plus `-debug-info-format none` for the host's
+Release dSYM restriction. Optimization and compiler checks were not relaxed.
+
+Xcode 26.6 is not installed locally. Its two required hosted jobs must validate
+the release candidate; earlier reported passes do not verify this workflow
+revision. Intel and oldest-OS runtime execution remain outside this local
+evidence. Cross-compilation still covers macOS 10.15 Intel, macOS 11 ARM64,
+iOS 13 device and iOS 13 Intel simulator targets. Nothing was committed, pushed,
+tagged or published.

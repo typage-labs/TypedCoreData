@@ -20,19 +20,22 @@ func baselineAPIClient(
     rawID: NSManagedObjectID
 ) throws {
     let _: ManagedID<CompileContact> = try ManagedID(validating: rawID)
-    let ids: [ManagedID<CompileContact>] = try context.fetchObjectIDs(for: request)
-    let section: [CompileContact]? = objects(inSectionAt: 0, of: controller)
+    // Infer from the request/controller alone, then verify the inferred types.
+    // A conflicting result annotation on the call can produce only an
+    // ambiguity diagnostic on Swift 6.0 instead of the intended type mismatch.
+    let ids = try context.fetchObjectIDs(for: request)
+    let _: [ManagedID<CompileContact>] = ids
+    let section = objects(inSectionAt: 0, of: controller)
+    let _: [CompileContact]? = section
     // The concrete batch overloads require a type when storing the native method.
     let nativeExecute: (NSPersistentStoreRequest) throws -> NSPersistentStoreResult = context.execute
-    _ = ids
-    _ = section
     _ = nativeExecute
 
     #if WRONG_ID_RESULT
-    let _: [ManagedID<CompileCompany>] = try context.fetchObjectIDs(for: request)
+    let _: [ManagedID<CompileCompany>] = ids
     #endif
     #if WRONG_SECTION_RESULT
-    let _: [CompileCompany]? = objects(inSectionAt: 0, of: controller)
+    let _: [CompileCompany]? = section
     #endif
     #if UNCHECKED_ID_INITIALIZER
     _ = ManagedID<CompileContact>(rawID)

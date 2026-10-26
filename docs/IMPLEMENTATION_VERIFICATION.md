@@ -387,3 +387,74 @@ Logs and probe evidence for this correction are in
 macOS 10.15 deployment targets are unchanged. The earlier passing hosted Xcode
 26.6 jobs and local iOS 27.1 run predate this correction and are not counted as
 post-change verification. Nothing was committed, pushed, tagged or published.
+
+## Swift 6.0 negative compiler verification follow-up
+
+The maintainer reports that the latest Xcode 16.0 run passes production builds,
+positive clients and minimum-target builds, but fails the verifier at
+`reject-macos-minimum-WRONG_ID_RESULT`. Its diagnostic is `type of expression is
+ambiguous without a type annotation`. This is a negative-fixture diagnostic
+problem; it is not evidence that Swift accepted incompatible identifiers.
+
+The original single statement constrained `fetchObjectIDs`'s `Entity` from both
+`NSFetchRequest<CompileContact>` and the expected `[ManagedID<CompileCompany>]`
+result. Those constraints conflict. Swift 6.0 reports this failed inference as
+ambiguity rather than the concrete assignment mismatch required by the verifier.
+Separating the statements removes the incompatible contextual type from generic
+call inference:
+
+```swift
+let ids = try context.fetchObjectIDs(for: request)
+let _: [ManagedID<CompileContact>] = ids // Positive check of the inferred result.
+#if WRONG_ID_RESULT
+let _: [ManagedID<CompileCompany>] = ids // Intentional incompatible assignment.
+#endif
+```
+
+`CompileContact` is this fixture's existing entity type (the `CompileItem` role
+in the issue's example). The positive check compiles on all four verifier
+targets. Locally the negative check now reports exactly `cannot assign value of
+type '[ManagedID<CompileContact>]' to type '[ManagedID<CompileCompany>]'`, with
+a note that the `Entity` arguments must be equal.
+
+The section fixture had the same call/result inference pattern; it now infers
+from the controller first, verifies `[CompileContact]?`, then rejects assignment
+to `[CompileCompany]?`. The remaining fixtures were reviewed and run locally:
+predicate roots are explicitly constructed and the matcher already allows a
+concrete mismatch on either argument; the scalar comparison, missing initializer
+label, availability and Objective-C generic-extension checks retain their
+specific diagnostic contracts. Their exact Swift 6.0 output still requires CI;
+no speculative or arbitrary-error alternatives were added.
+
+The verifier's diagnostic allowlist is unchanged. Its compiler-backed mutation
+now replaces the new `= ids` assignment with `unrelatedMissingSymbol()`, requires
+the missing-symbol diagnostic, and confirms that it does not pass the ID mismatch
+check. Two new Python self-tests reject ambiguity (alone or alongside the expected
+error) and mismatches involving other types. All existing unrelated-error,
+source-echo, crash and host-architecture controls remain enabled.
+
+Verification on 2026-10-26 used Xcode 27.1 (27A9275), Apple Swift 6.4,
+Swift 6 language mode, complete strict concurrency and warnings as errors:
+
+| Check | Result |
+| --- | --- |
+| Complete Debug suite | 63 tests / 73 cases / 8 suites passed; zero compiler warnings |
+| Complete optimized release suite | 63 tests / 73 cases / 8 suites passed; zero compiler warnings |
+| Minimum-target library and positive-client compilation | Four targets passed: macOS ARM64 11, macOS Intel 10.15, iOS ARM64 13, iOS simulator Intel 13 |
+| Negative compiler checks | All 14 intended rejections matched their specific diagnostics |
+| Verifier self-tests | 14 Python tests plus the actual unrelated-error compiler mutation passed |
+| Isolated precondition probes | All seven terminated with the expected invariant diagnostic |
+| iOS runtime attempt | Skipped (exit 77): CoreSimulator inventory/service access unavailable; no iOS tests executed in this run |
+
+Commands used the writable-cache and nested-sandbox accommodations already
+documented above. Release retained `-debug-info-format none` for this host's dSYM
+restriction; optimization and strict diagnostics stayed enabled. Expected Core
+Data error-path logging is present in the passing runtime tests. Logs are
+`.build/swift60-debug-tests.log`, `.build/swift60-release-tests.log`,
+`.build/swift60-compiler-verification.log`, `.build/swift60-ios-simulator.log`
+and the individual `.build/advanced-verification/` logs.
+
+**Hosted Xcode 16.0 verification remains required:** that toolchain is not
+installed locally, so these results do not prove its post-fix diagnostic wording.
+Production sources, public APIs, deployment targets and the Xcode 16.0 CI matrix
+are unchanged. No commit, push, tag or publication was performed.

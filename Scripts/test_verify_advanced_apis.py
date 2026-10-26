@@ -32,6 +32,25 @@ class CompilerDiagnosticTests(unittest.TestCase):
     def test_accepts_the_intended_type_mismatch(self):
         self.assertTrue(VERIFIER.NEGATIVE_CASES["WRONG_ID_RESULT"].matches(1, diagnostic(ID_ERROR)))
 
+    def test_ambiguity_is_not_evidence_of_any_intended_rejection(self):
+        output = diagnostic("type of expression is ambiguous without a type annotation")
+        for flag, rejection in VERIFIER.NEGATIVE_CASES.items():
+            with self.subTest(flag=flag):
+                self.assertFalse(rejection.matches(1, output))
+        # Even an intended mismatch must not conceal an additional ambiguity.
+        self.assertFalse(VERIFIER.NEGATIVE_CASES["WRONG_ID_RESULT"].matches(
+            1, diagnostic(ID_ERROR) + output))
+
+    def test_id_mismatch_requires_the_expected_specializations(self):
+        for wrong_error in [
+            ID_ERROR.replace("CompileContact", "NSManagedObject"),
+            ID_ERROR.replace("CompileCompany", "NSManagedObject"),
+            ID_ERROR.replace("ManagedID<CompileContact>", "CompileContact"),
+        ]:
+            with self.subTest(error=wrong_error):
+                self.assertFalse(VERIFIER.NEGATIVE_CASES["WRONG_ID_RESULT"].matches(
+                    1, diagnostic(wrong_error)))
+
     def test_prior_missing_symbol_mutation_is_not_a_type_safety_success(self):
         output = diagnostic("cannot find 'unrelatedMissingSymbol' in scope") + (
             "28 | #if WRONG_ID_RESULT\n"

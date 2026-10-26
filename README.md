@@ -450,6 +450,21 @@ tests and the verifier, then requires an available iOS simulator for runtime tes
 Run `python3 Scripts/test-ios-simulator.py` locally to use an installed compatible
 simulator; a skip is reported when one is unavailable.
 
+For Xcode 16.0 / Swift 6.0 test compatibility, a nonisolated test helper creates
+and uses each private context, returning only Sendable results to the fixture
+owner. Contexts are not captured from the main actor into `@Sendable` closures.
+Entity lookups are evaluated before `#require`, and throwing native lookups before
+identity assertions. Capture checking and all assertions remain enabled.
+Xcode 16.0 remains in CI, which now records its actual Core Data declarations
+before testing; verification with that exact toolchain awaits a rerun. See the
+[CI compatibility follow-up](docs/IMPLEMENTATION_VERIFICATION.md#xcode-160-ci-compatibility-follow-up).
+
+Compiler-negative ID and section checks infer the result before attempting an
+incompatible assignment, so the verifier requires a concrete type mismatch rather
+than accepting Swift 6.0's generic ambiguity diagnostic. See the
+[compiler verification follow-up](docs/IMPLEMENTATION_VERIFICATION.md#swift-60-negative-compiler-verification-follow-up)
+for local results and the remaining Xcode 16.0 hosted verification requirement.
+
 See [release preparation results](docs/RELEASE_PREPARATION.md) for the current
 toolchain, counts, commands, and platform gaps. Historical results remain in
 [implementation verification](docs/IMPLEMENTATION_VERIFICATION.md).

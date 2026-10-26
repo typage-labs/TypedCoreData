@@ -55,6 +55,8 @@ class CompilerRejection:
 
 
 NEGATIVE_CASES = {
+    # The fixture infers the result before its invalid assignment. Require the
+    # concrete specialization mismatch; a generic ambiguity error is not proof.
     "WRONG_ID_RESULT": CompilerRejection((
         r"cannot (?:assign|convert) value of type '\[ManagedID<CompileContact>\]' "
         r"to (?:type|specified type) '\[ManagedID<CompileCompany>\]'",
@@ -130,7 +132,7 @@ def sdk(name):
 def verify_missing_symbol_mutation(compiler, flags, destination, client):
     """The pre-release review's unrelated-error mutation must not pass T1."""
     source = client.read_text()
-    original = "let _: [ManagedID<CompileCompany>] = try context.fetchObjectIDs(for: request)"
+    original = "let _: [ManagedID<CompileCompany>] = ids"
     mutated = "let _: [ManagedID<CompileCompany>] = unrelatedMissingSymbol()"
     if source.count(original) != 1:
         raise SystemExit("Cannot locate the unique WRONG_ID_RESULT mutation site")

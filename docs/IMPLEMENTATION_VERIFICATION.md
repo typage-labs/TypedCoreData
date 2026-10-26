@@ -193,6 +193,12 @@ was added. No commit, push, tag, or publication was performed.
 
 ## Xcode 16.0 CI compatibility follow-up
 
+**Historical first attempt:** its explicit `@Sendable` closure change was
+insufficient. A subsequent hosted failure confirmed that Xcode 16.0 imports
+`NSManagedObjectContext` as non-Sendable. The corrected test design and current
+verification status are recorded in the next section. The two identity-assertion
+changes below remain in place.
+
 **26 October 2026.** The first hosted run was
 [40307190448](https://github.com/typage-labs/TypedCoreData/actions/runs/40307190448),
 with failed job
@@ -275,3 +281,109 @@ hosted rerun**; the original job stopped during debug test compilation, so it
 provides no result for the later steps. Current local success does not establish
 that all remaining old-toolchain checks will pass. No commit, push, tag or
 publication was performed during this fix.
+
+## Corrected private-context tests for older SDK sendability
+
+The next hosted **Debug tests** failure identified a non-Sendable context capture
+in `PrivateContextAPITests.swift:26` and a context capture in the `#require`
+expansion at `TypedCoreDataTests.swift:313` (line numbers before this correction).
+These are the maintainer's confirmed diagnostics. No new log attachment was
+available in this session, so this record does not claim an independent read of
+the complete second failure log. Production compilation succeeds according to
+that report; the correction remains confined to tests, diagnostics and docs.
+
+### Why the first attempt was insufficient
+
+An explicit `@Sendable` closure avoids inherited main-actor isolation, but also
+requires Sendable captures. The earlier probe used the newer SDK's native context
+type, so it failed to model the older SDK's non-Sendable context. It therefore
+could not establish compatibility with Xcode 16.0.
+
+This distinction is supported by Apple's
+[June 2024 DTS guidance](https://developer.apple.com/forums/thread/756807), which
+identifies the context as non-Sendable and recommends a nonisolated entry point,
+and its [SDK 26 release notes](https://developer.apple.com/go/?id=ipados-26-rn),
+which describe the later context and `perform`-family Sendable annotation changes.
+Those sources explain the mismatch; current documentation is not a substitute
+for inspecting Xcode 16.0's exact final SDK interface.
+
+### Current design and preserved guarantees
+
+- `withPrivateTestContext` in `Tests/TypedCoreDataTests/TestStack.swift` is a
+  test-only global async function outside all actor-isolated types. The package
+  does not opt into default MainActor isolation. It receives the native
+  coordinator and a Sendable operation, creates the context locally, and calls
+  native async `perform` with an ordinary closure. It does not capture a context
+  from an actor into an explicitly Sendable closure or return a context.
+- `Snapshot: Sendable` is still required. Requests, controllers, managed objects
+  and attribute reads stay within Core Data's private queue. The existing
+  assertions still verify that execution is off the main thread and check native
+  results, source-request preservation, identity, ordering and inheritance.
+- The SQLite fixture remains owned by MainActor. The private closure's `defer`
+  resets the context on success or error, before its async operation completes.
+  Only then can the wrapper's `defer` remove the store and directory. The
+  identifier-transfer test reuses the same helper and still saves on the private
+  queue before resolving the Sendable identifier on the main queue.
+- All six private-context entity lookups are evaluated into local optionals
+  before `#require`. The macro unwraps the same value and retains its failure
+  assertion without embedding a context lookup in its generated closure.
+
+There is no new production scheduling API, unsafe pointer/box, detached task,
+unchecked conformance, `nonisolated(unsafe)`, `@preconcurrency import`, lowered
+diagnostic setting, removed test or reduced assertion. The coordinator and
+operation crossing the actor boundary remain subject to normal Sendable checking.
+
+### SDK signature verification: completed and pending
+
+Only Xcode 27.1 / Swift 6.4 is installed locally. Its macOS 27 SDK was inspected:
+the context has `NS_SWIFT_NONISOLATED NS_SWIFT_SENDABLE`, the coordinator has
+`NS_SWIFT_SENDABLE`, and the async method is imported as:
+
+```swift
+@preconcurrency nonisolated
+public func perform<T>(
+    schedule: NSManagedObjectContext.ScheduledTaskType = .immediate,
+    _ block: @escaping @Sendable () throws -> T
+) async rethrows -> T
+```
+
+The conservative compile probe uses a **plain non-Sendable mutable class** and
+this older-form signature:
+
+```swift
+func perform<T>(_ block: @escaping () throws -> T) async rethrows -> T
+```
+
+This is an explicitly labeled model of the annotation boundary, not an assertion
+that the complete final Xcode 16.0 interface was retrieved. The new helper shape
+passes strict SIL compilation with this model and real Testing macros. Three
+negative controls reject an explicit Sendable context capture, an actor-inherited
+closure transfer, and a non-Sendable coordinator transfer. Thus the probe no
+longer accidentally benefits from the current SDK's context conformance.
+
+**Exact Xcode 16.0 SDK verification remains pending.** Attempts to retrieve its
+final interface were unsuccessful. Historical SDK header evidence supports the
+coordinator's native Sendable conformance, but the final SDK must confirm it.
+The CI matrix still includes Xcode 16.0 and now prints the selected SDK path,
+context/coordinator Objective-C declarations, native block methods, Swift
+interface compiler metadata and every `perform` declaration **before Debug
+tests**. This makes the actual signatures available even if test compilation
+fails. The read-only inspection runs successfully with the installed SDK;
+no compiler flags or CI test gates were weakened.
+
+### Verification of this correction
+
+| Check | Result |
+| --- | --- |
+| Debug suite, Swift 6 complete concurrency / warnings as errors | **63 tests / 73 cases / 8 suites passed**, zero compiler warnings |
+| Optimized release suite, same checks | **63 tests / 73 cases / 8 suites passed**, zero compiler warnings; existing host dSYM accommodation `-debug-info-format none` retained |
+| API verifier | Four minimum-target library/client builds, 12 harness self-tests, 14 intended compiler rejections, one mutation check and seven isolated traps; see current local logs |
+| Conservative non-Sendable-context probe | Positive compilation and three intended negative controls; compiler evidence only, not Core Data runtime evidence |
+| Exact Xcode 16.0 / patched iOS runtime execution | Hosted verification required; local Xcode 16.0 is absent and this session cannot access CoreSimulator |
+
+Logs and probe evidence for this correction are in
+`.build/coredata-sendability-fix/`; the API verifier's individual logs are in
+`.build/advanced-verification/`. Production sources, public APIs and iOS 13 /
+macOS 10.15 deployment targets are unchanged. The earlier passing hosted Xcode
+26.6 jobs and local iOS 27.1 run predate this correction and are not counted as
+post-change verification. Nothing was committed, pushed, tagged or published.

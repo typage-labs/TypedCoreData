@@ -305,12 +305,13 @@ struct TypedCoreDataTests {
     @available(macOS 12, iOS 15, *)
     @Test func identifierCrossesAContextQueueUnderStrictConcurrency() async throws {
         let stack = try TestStack()
-        let writer = stack.makeContext(concurrencyType: .privateQueueConcurrencyType)
-
         // Only the Sendable identifier leaves the private queue. The managed
         // object remains confined to the context that created it.
-        let id: ManagedID<TestItem> = try await writer.perform { @Sendable in
-            let entity = try #require(NSEntityDescription.entity(forEntityName: "Item", in: writer))
+        let id: ManagedID<TestItem> = try await withPrivateTestContext(
+            coordinator: stack.coordinator
+        ) { writer in
+            let itemDescription = NSEntityDescription.entity(forEntityName: "Item", in: writer)
+            let entity = try #require(itemDescription)
             let item = TestItem(entity: entity, insertInto: writer)
             item.name = "Written on a private queue"
             try writer.save()

@@ -18,14 +18,7 @@ private func withPrivateSQLiteContext<Snapshot: Sendable>(
             Issue.record(error, "Failed to clean up the private-context SQLite test store")
         }
     }
-    let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
-    context.persistentStoreCoordinator = stack.coordinator
-    // Explicitly avoid inheriting MainActor isolation with older SDK overlays.
-    return try await context.perform { @Sendable in
-        // This completes before the main-actor fixture removes the store.
-        defer { context.reset() }
-        return try operation(context)
-    }
+    return try await withPrivateTestContext(coordinator: stack.coordinator, operation)
 }
 
 private struct PrivateIDSnapshot: Sendable {
@@ -65,10 +58,10 @@ struct PrivateContextAPITests {
     @available(macOS 12, iOS 15, *)
     @Test func objectIDFetchPreservesPendingChangesAndNativeResultsOnPrivateQueue() async throws {
         let snapshot = try await withPrivateSQLiteContext { context in
-            let entity = try #require(NSEntityDescription.entity(forEntityName: "Item", in: context))
-            let childEntity = try #require(
-                NSEntityDescription.entity(forEntityName: "SpecialItem", in: context)
-            )
+            let itemDescription = NSEntityDescription.entity(forEntityName: "Item", in: context)
+            let childDescription = NSEntityDescription.entity(forEntityName: "SpecialItem", in: context)
+            let entity = try #require(itemDescription)
+            let childEntity = try #require(childDescription)
             let excluded = SQLiteItem(entity: entity, insertInto: context)
             excluded.value = 10
             let saved = SQLiteItem(entity: entity, insertInto: context)
@@ -116,7 +109,8 @@ struct PrivateContextAPITests {
     @available(macOS 14, iOS 17, *)
     @Test func predicateAttachmentAndExecutionStayOnPrivateQueue() async throws {
         let snapshot = try await withPrivateSQLiteContext { context in
-            let entity = try #require(NSEntityDescription.entity(forEntityName: "Item", in: context))
+            let itemDescription = NSEntityDescription.entity(forEntityName: "Item", in: context)
+            let entity = try #require(itemDescription)
             let alice = SQLiteItem(entity: entity, insertInto: context)
             alice.name = "Alice"
             alice.value = 30
@@ -165,10 +159,10 @@ struct PrivateContextAPITests {
     @available(macOS 12, iOS 15, *)
     @Test func sectionAccessPreservesIdentityOrderAndSubclassesOnPrivateQueue() async throws {
         let snapshot = try await withPrivateSQLiteContext { context in
-            let entity = try #require(NSEntityDescription.entity(forEntityName: "Item", in: context))
-            let childEntity = try #require(
-                NSEntityDescription.entity(forEntityName: "SpecialItem", in: context)
-            )
+            let itemDescription = NSEntityDescription.entity(forEntityName: "Item", in: context)
+            let childDescription = NSEntityDescription.entity(forEntityName: "SpecialItem", in: context)
+            let entity = try #require(itemDescription)
+            let childEntity = try #require(childDescription)
             let second = SQLiteItem(entity: entity, insertInto: context)
             second.name = "A"
             second.value = 2

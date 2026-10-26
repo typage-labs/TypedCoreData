@@ -5,6 +5,25 @@ class TestItem: NSManagedObject {
     @NSManaged var name: String?
 }
 
+/// Test-only, nonisolated entry point: the context is created here rather than
+/// transferred from MainActor. Only the native Sendable coordinator, the
+/// Sendable operation, and its Sendable result cross that actor boundary.
+@available(macOS 12, iOS 15, *)
+func withPrivateTestContext<Snapshot: Sendable>(
+    coordinator: NSPersistentStoreCoordinator,
+    _ operation: @escaping @Sendable (NSManagedObjectContext) throws -> Snapshot
+) async throws -> Snapshot {
+    let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    context.persistentStoreCoordinator = coordinator
+    // Do not require context captures to be Sendable. Older SDKs accept an
+    // ordinary closure here; this function gives it no actor isolation to inherit.
+    return try await context.perform {
+        // Complete private-queue cleanup before the fixture owner resumes.
+        defer { context.reset() }
+        return try operation(context)
+    }
+}
+
 @objc(TypedCoreDataTestSpecialItem)
 final class TestSpecialItem: TestItem {
     @NSManaged var detail: String?

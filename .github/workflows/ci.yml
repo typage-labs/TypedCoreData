@@ -38,6 +38,38 @@ jobs:
           xcodebuild -version
           xcrun swift --version
           xcodebuild -showsdks
+      - name: Record Core Data concurrency declarations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import platform
+          import subprocess
+
+          sdk = Path(subprocess.check_output(
+              ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip())
+          framework = sdk / "System/Library/Frameworks/CoreData.framework"
+          print(f"Selected SDK: {sdk}")
+          for name in ("NSManagedObjectContext", "NSPersistentStoreCoordinator"):
+              header = framework / "Headers" / f"{name}.h"
+              lines = header.read_text().splitlines()
+              print(f"\n{header}:")
+              for index, line in enumerate(lines):
+                  if f"@interface {name} " in line or line.startswith("- (void)performBlock"):
+                      for offset in range(max(0, index - 2), index + 1):
+                          print(f"{offset + 1}: {lines[offset]}")
+          modules = framework / "Modules/CoreData.swiftmodule"
+          architecture = "arm64e" if platform.machine() == "arm64" else "x86_64"
+          interface = modules / f"{architecture}-apple-macos.swiftinterface"
+          print(f"\n{interface}:")
+          owner = ""
+          for index, line in enumerate(interface.read_text().splitlines()):
+              if line.startswith("extension "):
+                  owner = line
+              if line.startswith("// swift-") or "func perform" in line:
+                  if "func perform" in line:
+                      print(owner)
+                  print(f"{index + 1}: {line}")
+          PY
       - name: Debug tests
         run: swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
       - name: Release tests

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS / Xcode ${{ matrix.xcode }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Swift 6.0 compiler floor and a current stable Apple Silicon toolchain.
+          # Installed paths: https://github.com/actions/runner-images/tree/main/images/macos
+          - runner: macos-15-intel
+            xcode: "16.0"
+          - runner: macos-26
+            xcode: "26.6"
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Record toolchain and SDKs
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          xcodebuild -showsdks
+      - name: Debug tests
+        run: swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+      - name: Release tests
+        run: swift test -c release -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+      - name: Minimum deployment builds and compiler contracts
+        run: python3 Scripts/verify-advanced-apis.py
+
+  ios:
+    name: iOS simulator / Xcode 26.6
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+      - name: Execute real Core Data tests on an available iOS simulator
+        # Unavailable services/runtimes fail this job; they are never a runtime pass.
+        run: python3 Scripts/test-ios-simulator.py --require-runtime

@@ -46,7 +46,7 @@ same confirmed repository URL:
 ```swift
 dependencies: [
     .package(
-        url: "<CONFIRMED_GITHUB_REPOSITORY_URL>",
+        url: "https://github.com/typage-labs/TypedCoreData.git",
         .upToNextMinor(from: "0.1.0")
     )
 ]

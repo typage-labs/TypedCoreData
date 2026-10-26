@@ -190,3 +190,88 @@ compiler/probe logs. Build products and logs are ignored by Git.
 No custom predicate representation, underscored KVC use, unchecked Sendable
 conformance, concurrency abstraction, dependency, or third-party implementation
 was added. No commit, push, tag, or publication was performed.
+
+## Xcode 16.0 CI compatibility follow-up
+
+**26 October 2026.** The first hosted run was
+[40307190448](https://github.com/typage-labs/TypedCoreData/actions/runs/40307190448),
+with failed job
+[121519102492 — macOS / Xcode 16.0](https://github.com/typage-labs/TypedCoreData/actions/runs/40307190448/job/121519102492).
+GitHub CLI was installed but could not connect to `api.github.com` from the
+restricted session. Diagnosis uses the job excerpt supplied by the maintainer;
+the complete hosted log was not retrieved.
+
+### First failure and classification
+
+The exact failing step was **Debug tests**, running:
+
+```sh
+swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+```
+
+All seven production files compiled before the test target failed. The first
+meaningful error was at the original `PrivateContextAPITests.swift:23`, the
+`context.perform` call inside a `@MainActor` helper:
+
+```text
+sending main actor-isolated value of type '() throws -> Snapshot' with later accesses to nonisolated context risks causing data races
+```
+
+The closure was inferred as main-actor-isolated at the older toolchain's async
+call boundary. The fix explicitly declares the closure `@Sendable`, preventing
+that inherited isolation and checking its captures. The operation parameter and
+returned snapshot were already constrained to be Sendable. Core Data still
+schedules the work; reset remains inside the private-queue closure before the
+main-actor fixture cleans up the store. The same annotation is applied to the
+existing `writer.perform` test, which has the same inference-sensitive pattern.
+That second call was not separately diagnosed in the supplied log.
+
+The log also reports two older Swift Testing macro expansion errors at the
+original `TypedCoreDataTests.swift:60` and `:77`:
+
+```text
+call can throw, but it is executed in a non-throwing autoclosure
+```
+
+Both assertions had the form `#expect(object === (try nativeLookup()))`. The
+generated binary-operation checker could not handle the nested throwing operand.
+Evaluating each native lookup into a local `let` first preserves call order,
+throwing behavior and the identity comparison, without that macro expansion.
+
+**Classification:** test-source compatibility with Swift 6.0's closure-isolation
+checking and its bundled Swift Testing macro. This log does not show a production
+`ManagedID` Sendable failure or a CI runner/configuration failure. The exact older
+Core Data SDK declaration was not independently inspected, so the closure issue
+is not attributed to a specific SDK annotation change or compiler bug as a
+verified fact.
+
+### Scope and verification after the fix
+
+Only the two test files above and compatibility documentation changed. Production
+sources, public APIs, Package.swift, iOS 13/macOS 10.15 deployment targets, CI
+matrix, strict concurrency flags and warnings-as-errors are unchanged. No test
+was removed, skipped or weakened; no unchecked conformance or diagnostic
+suppression was introduced.
+
+| Check | Result and limits |
+| --- | --- |
+| Complete debug suite | **63 tests / 73 cases / 8 suites passed**, zero compiler warnings |
+| Complete optimized release suite | **63 tests / 73 cases / 8 suites passed**, zero compiler warnings; `-debug-info-format none` retains the previously documented host dSYM workaround |
+| Full API verifier | **12 Python self-tests, four minimum-target library/client builds, 14 intended compiler rejections, one mutation check and seven isolated traps passed** |
+| Focused closure compiler probe | A compile-only async signature accepting an unannotated escaping closure reproduces actor-transfer rejection; explicit `@Sendable` passes strict SIL compilation. This models inference, not Core Data runtime scheduling or the actual Xcode 16 SDK. |
+| Earlier local iOS run | Existing `.build/ios-simulator/run-ksvkj3r3/` logs confirm **63 tests / 8 suites passed** on iOS 27.1 before this patch; this is not a patched-code rerun |
+| Patched iOS runtime / Xcode 16.0 | **Not verified in this session**: CoreSimulator service access is unavailable, and Xcode 16.0 is not installed locally |
+
+Local post-fix verification used Xcode 27.1 / Apple Swift 6.4 on ARM64 macOS
+27.0.1. Logs are in `.build/xcode16-ci-fix/` (`debug-tests.log`,
+`release-tests.log`, `verifier.log`); individual compiler/probe logs remain in
+`.build/advanced-verification/`. Swift compilation retained complete strict
+concurrency and warnings-as-errors, using the writable caches and nested-sandbox
+accommodation documented earlier in this file.
+
+The maintainer reports the first hosted Xcode 26.6 macOS and iOS simulator jobs
+passed. The corrected Xcode 16.0 **debug, release and verifier steps still need a
+hosted rerun**; the original job stopped during debug test compilation, so it
+provides no result for the later steps. Current local success does not establish
+that all remaining old-toolchain checks will pass. No commit, push, tag or
+publication was performed during this fix.

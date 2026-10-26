@@ -20,7 +20,8 @@ private func withPrivateSQLiteContext<Snapshot: Sendable>(
     }
     let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
     context.persistentStoreCoordinator = stack.coordinator
-    return try await context.perform {
+    // Explicitly avoid inheriting MainActor isolation with older SDK overlays.
+    return try await context.perform { @Sendable in
         // This completes before the main-actor fixture removes the store.
         defer { context.reset() }
         return try operation(context)

@@ -57,7 +57,8 @@ struct TypedCoreDataTests {
         #expect(existing === item)
         #expect(object === item)
         #expect(registered === item)
-        #expect(existing === (try stack.context.existingObject(with: id.objectID)))
+        let nativeExisting = try stack.context.existingObject(with: id.objectID)
+        #expect(existing === nativeExisting)
         #expect(object === stack.context.object(with: id.objectID))
         #expect(registered === stack.context.registeredObject(for: id.objectID))
     }
@@ -74,7 +75,8 @@ struct TypedCoreDataTests {
         #expect(resolved.objectID == id.objectID)
         #expect(resolved.name == "Saved value")
         #expect(reader.registeredObject(for: id) === resolved)
-        #expect(resolved === (try reader.existingObject(with: id.objectID)))
+        let nativeResolved = try reader.existingObject(with: id.objectID)
+        #expect(resolved === nativeResolved)
     }
 
     @Test func registeredObjectDoesNotFetchAnUnregisteredObject() throws {
@@ -307,7 +309,7 @@ struct TypedCoreDataTests {
 
         // Only the Sendable identifier leaves the private queue. The managed
         // object remains confined to the context that created it.
-        let id: ManagedID<TestItem> = try await writer.perform {
+        let id: ManagedID<TestItem> = try await writer.perform { @Sendable in
             let entity = try #require(NSEntityDescription.entity(forEntityName: "Item", in: writer))
             let item = TestItem(entity: entity, insertInto: writer)
             item.name = "Written on a private queue"
